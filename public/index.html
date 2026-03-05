@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="cs" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Cleaner - System Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        cyber: {
+                            bg: '#0a0a0f',
+                            panel: '#11111a',
+                            border: '#1f1f2e',
+                            neon: '#00f0ff',
+                            purple: '#a855f7',
+                            amber: '#f59e0b',
+                            rose: '#e11d48',
+                            green: '#10b981'
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
+                        sans: ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Socket.io -->
+    <script src="/socket.io/socket.io.js"></script>
+
+    <style>
+        body {
+            background-color: var(--color-cyber-bg);
+            background-image:
+                radial-gradient(circle at 15% 50%, rgba(0, 240, 255, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 85% 30%, rgba(168, 85, 247, 0.03) 0%, transparent 50%);
+            color: #e2e8f0;
+            overflow: hidden;
+        }
+
+        /* Glassmorphism Panels */
+        .glass-panel {
+            background: rgba(17, 17, 26, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(31, 31, 46, 0.8);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Cyber UI Elements */
+        .cyber-input {
+            background: rgba(10, 10, 15, 0.8);
+            border: 1px solid rgba(0, 240, 255, 0.3);
+            color: #00f0ff;
+            transition: all 0.3s ease;
+        }
+
+        .cyber-input:focus {
+            outline: none;
+            border-color: #00f0ff;
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+        }
+
+        .neon-button {
+            position: relative;
+            background: transparent;
+            border: 1px solid #00f0ff;
+            color: #00f0ff;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .neon-button:hover:not(:disabled) {
+            background: rgba(0, 240, 255, 0.1);
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.4), inset 0 0 10px rgba(0, 240, 255, 0.2);
+            text-shadow: 0 0 5px rgba(0, 240, 255, 0.8);
+        }
+
+        .neon-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(100%);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0a0a0f;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #1f1f2e;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #33334d;
+        }
+
+        /* Loader Animation */
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-top-color: currentColor;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+
+        .loading .spinner {
+            display: block;
+        }
+
+        .loading .btn-text {
+            opacity: 0.8;
+        }
+
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* System Console */
+        #console-output {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+
+        .log-info {
+            color: #94a3b8;
+        }
+
+        .log-success {
+            color: #10b981;
+        }
+
+        .log-warning {
+            color: #f59e0b;
+        }
+
+        .log-error {
+            color: #e11d48;
+        }
+    </style>
+</head>
+
+<body class="h-screen flex flex-col antialiased bg-cyber-bg">
+
+    <!-- Header -->
+    <header
+        class="h-14 glass-panel border-b border-cyber-border/50 flex items-center justify-between px-6 shrink-0 z-10">
+        <div class="flex items-center gap-3">
+            <svg class="w-6 h-6 text-cyber-neon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z">
+                </path>
+            </svg>
+            <h1 class="text-lg font-bold tracking-wider text-slate-200">FILE<span class="text-cyber-neon">CLEANER</span>
+                <span class="text-xs text-slate-500 font-mono">v3.0</span></h1>
+        </div>
+        <div class="flex items-center gap-4 text-xs font-mono">
+            <div class="px-3 py-1 rounded bg-black/40 border border-cyber-border text-slate-400">
+                <span class="text-cyber-neon">WS:</span> <span id="ws-status"
+                    class="text-amber-400">CONNECTING...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Layout -->
+    <div class="flex flex-1 overflow-hidden">
+
+        <!-- SIDEBAR (Controls) -->
+        <aside class="w-80 glass-panel border-r border-cyber-border/50 flex flex-col z-10 shrink-0">
+            <div class="p-5 flex-1 overflow-y-auto">
+
+                <!-- Target Path -->
+                <div class="mb-6">
+                    <label class="block text-xs font-bold text-cyber-neon mb-2 uppercase tracking-wide">Cílový
+                        adresář</label>
+                    <input type="text" id="targetPath" class="w-full px-3 py-2 rounded cyber-input text-sm"
+                        placeholder="C:\Users\Admin\Downloads">
+                </div>
+
+                <div class="w-full h-px bg-gradient-to-r from-transparent via-cyber-border to-transparent mb-6"></div>
+
+                <!-- Primary Actions -->
+                <div class="space-y-3 mb-6">
+                    <button id="cleanBtn" class="w-full neon-button py-3 rounded">
+                        <div class="spinner"></div>
+                        <span class="btn-text">🧹 Běžný Úklid</span>
+                    </button>
+
+                    <button id="deleteEmptyBtn" class="w-full neon-button py-3 rounded"
+                        style="border-color: var(--color-cyber-rose); color: var(--color-cyber-rose);">
+                        <div class="spinner"></div>
+                        <span class="btn-text">🗑️ Smazat prázdné složky</span>
+                    </button>
+
+                    <button id="analyzeBtn" class="w-full neon-button py-3 rounded"
+                        style="border-color: #3b82f6; color: #3b82f6;">
+                        <div class="spinner"></div>
+                        <span class="btn-text">📊 Spustit Analýzu</span>
+                    </button>
+
+                    <button id="findDupesBtn" class="w-full neon-button py-3 rounded"
+                        style="border-color: var(--color-cyber-purple); color: var(--color-cyber-purple);">
+                        <div class="spinner"></div>
+                        <span class="btn-text">👯 Najít Duplicity (MD5)</span>
+                    </button>
+                </div>
+
+                <!-- Flexible Archive -->
+                <div class="mb-6 p-4 rounded bg-black/30 border border-cyber-amber/20">
+                    <label class="block text-xs font-bold text-cyber-amber mb-3 uppercase tracking-wide">Archivace
+                        starých dat</label>
+
+                    <div class="flex items-center gap-2 mb-3">
+                        <input type="number" id="archiveDays"
+                            class="cyber-input w-20 text-center text-sm py-1.5 rounded" value="180" min="1"
+                            style="border-color: var(--color-cyber-amber);">
+                        <span class="text-xs text-slate-400">Dní neaktivity</span>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2 mb-4">
+                        <button
+                            class="quick-day-btn text-xs py-1 rounded bg-cyber-amber/10 border border-cyber-amber/30 text-cyber-amber hover:bg-cyber-amber hover:text-black transition"
+                            data-days="30">1 Měs</button>
+                        <button
+                            class="quick-day-btn text-xs py-1 rounded bg-cyber-amber/10 border border-cyber-amber/30 text-cyber-amber hover:bg-cyber-amber hover:text-black transition"
+                            data-days="90">3 Měs</button>
+                        <button
+                            class="quick-day-btn text-xs py-1 rounded bg-cyber-amber/10 border border-cyber-amber/30 text-cyber-amber hover:bg-cyber-amber hover:text-black transition"
+                            data-days="365">1 Rok</button>
+                    </div>
+
+                    <button id="archiveBtn" class="w-full neon-button py-2 rounded text-sm"
+                        style="border-color: var(--color-cyber-amber); color: var(--color-cyber-amber);">
+                        <div class="spinner"></div>
+                        <span class="btn-text">📦 Archivovat</span>
+                    </button>
+                </div>
+
+                <!-- Autopilot -->
+                <div class="p-4 rounded bg-black/30 border border-cyber-green/20">
+                    <label class="block text-xs font-bold text-cyber-green mb-3 uppercase tracking-wide">Autopilot
+                        (Cron)</label>
+                    <select id="cronSchedule" class="w-full cyber-input text-xs py-2 px-2 rounded mb-3"
+                        style="border-color: var(--color-cyber-green); color: var(--color-cyber-green);">
+                        <option value="0 * * * *">Každou hodinu</option>
+                        <option value="0 18 * * *">Každý den v 18:00</option>
+                        <option value="0 17 * * 5">Každý pátek v 17:00</option>
+                    </select>
+                    <div class="flex gap-2">
+                        <button id="startCronBtn" class="flex-1 neon-button py-2 text-xs rounded"
+                            style="border-color: var(--color-cyber-green); color: var(--color-cyber-green);">Start</button>
+                        <button id="stopCronBtn" class="flex-1 neon-button py-2 text-xs rounded"
+                            style="border-color: var(--color-cyber-rose); color: var(--color-cyber-rose);"
+                            disabled>Stop</button>
+                    </div>
+                </div>
+
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT AREA -->
+        <main class="flex-1 flex flex-col min-w-0 bg-cyber-bg relative p-6 overflow-y-auto">
+
+            <!-- Top Stats Row -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div class="glass-panel p-5 rounded-lg border-l-4 border-l-cyber-neon flex flex-col justify-center">
+                    <span class="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Skenovaná
+                        Velikost</span>
+                    <span id="stat-size" class="text-2xl font-mono text-white">0 B</span>
+                    <span id="stat-files" class="text-xs text-slate-500 mt-1">0 souborů celkem</span>
+                </div>
+                <div class="glass-panel p-5 rounded-lg border-l-4 border-l-cyber-rose flex flex-col justify-center">
+                    <span class="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Smazáno prázdných
+                        složek</span>
+                    <span id="stat-deleted" class="text-2xl font-mono text-white">0</span>
+                    <span class="text-xs text-slate-500 mt-1">Od startu serveru</span>
+                </div>
+                <div class="glass-panel p-5 rounded-lg border-l-4 border-l-cyber-green flex flex-col justify-center">
+                    <span class="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Status
+                        Autopilota</span>
+                    <span id="stat-autopilot" class="text-lg font-mono text-slate-500 mt-1">VYPNUTO</span>
+                </div>
+            </div>
+
+            <!-- Content Grid (Chart + Tables) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+
+                <!-- Chart Widget -->
+                <div class="glass-panel p-5 rounded-lg lg:col-span-1 flex flex-col">
+                    <h3 class="text-sm font-bold text-slate-300 uppercase tracking-wide mb-4 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-cyber-neon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path>
+                        </svg>
+                        Složení Úložiště
+                    </h3>
+                    <div class="flex-1 relative min-h-[250px] flex items-center justify-center">
+                        <canvas id="storageChart"></canvas>
+                        <div id="chart-placeholder"
+                            class="absolute inset-0 flex items-center justify-center text-xs text-slate-600 font-mono text-center px-4">
+                            Spusťte "Analýzu úložiště" pro vygenerování grafu.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dynamic Data Area (Top Files or Duplicates) -->
+                <div
+                    class="glass-panel p-0 rounded-lg lg:col-span-2 flex flex-col overflow-hidden border border-cyber-border min-h-[300px]">
+
+                    <!-- Top Files Table -->
+                    <div id="topFilesSection" class="flex-1 flex flex-col hidden">
+                        <div class="p-4 bg-black/40 border-b border-cyber-border">
+                            <h3 class="text-sm font-bold text-blue-400 uppercase tracking-wide">Top 10 Největších
+                                souborů</h3>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-4">
+                            <table class="w-full text-left text-sm font-mono">
+                                <thead>
+                                    <tr class="text-slate-500 border-b border-cyber-border/50">
+                                        <th class="pb-2 font-normal">SOUBOR</th>
+                                        <th class="pb-2 font-normal text-right">VELIKOST</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="topFilesList" class="divide-y divide-cyber-border/30"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Duplicates Section -->
+                    <div id="dupesSection" class="flex-1 flex flex-col hidden">
+                        <div class="p-4 bg-black/40 border-b border-cyber-border flex justify-between items-center">
+                            <h3 class="text-sm font-bold text-cyber-purple uppercase tracking-wide">Nalezené Duplicity
+                                (MD5)</h3>
+                            <button id="deleteSelectedDupesBtn"
+                                class="text-xs bg-cyber-rose/20 text-cyber-rose border border-cyber-rose/50 px-3 py-1 rounded hover:bg-cyber-rose hover:text-white transition hidden">
+                                Smazat vybrané
+                            </button>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-4 relative">
+                            <div id="dupesList" class="space-y-6"></div>
+                        </div>
+                    </div>
+
+                    <!-- Placeholder -->
+                    <div id="dataPlaceholder"
+                        class="flex-1 flex items-center justify-center text-sm font-mono text-slate-600">
+                        [ Zde se zobrazí výsledky analýzy nebo duplicit ]
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Spacing for fixed console -->
+            <div class="h-48 shrink-0"></div>
+
+        </main>
+    </div>
+
+    <!-- SYSTEM CONSOLE (Fixed Bottom) -->
+    <div
+        class="h-48 fixed bottom-0 left-80 right-0 bg-[#050508] border-t border-cyber-neon/30 z-20 flex flex-col shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+        <div class="h-8 bg-[#111] border-b border-[#222] flex items-center px-4 justify-between shrink-0">
+            <span class="text-[10px] text-slate-500 font-mono tracking-widest uppercase">System Console // Socket.io
+                Stream</span>
+            <button id="clearConsoleBtn"
+                class="text-[10px] text-slate-600 hover:text-slate-300 uppercase tracking-wider">Clear</button>
+        </div>
+        <div id="console-output" class="flex-1 overflow-y-auto p-3 space-y-1">
+            <div class="log-info">[SYSTEM] Inicializace prostředí...</div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- INICIALIZACE ---
+        const socket = io();
+        const consoleEl = document.getElementById('console-output');
+        const wsStatus = document.getElementById('ws-status');
+
+        let storageChartInstance = null;
+
+        // Elementy
+        const targetPathInput = document.getElementById('targetPath');
+        const sections = {
+            topFiles: document.getElementById('topFilesSection'),
+            dupes: document.getElementById('dupesSection'),
+            placeholder: document.getElementById('dataPlaceholder')
+        };
+
+        // --- WEBSOCKET LOGOVÁNÍ ---
+        socket.on('connect', () => {
+            wsStatus.textContent = 'CONNECTED';
+            wsStatus.className = 'text-green-400 font-bold';
+        });
+
+        socket.on('disconnect', () => {
+            wsStatus.textContent = 'OFFLINE';
+            wsStatus.className = 'text-red-500 animate-pulse';
+        });
+
+        socket.on('log', (log) => {
+            appendLog(`[${log.timestamp}] [${log.type.toUpperCase()}] ${log.message}`, log.type);
+        });
+
+        function appendLog(text, type = 'info') {
+            const div = document.createElement('div');
+            div.textContent = text;
+            div.className = `log-${type}`;
+            consoleEl.appendChild(div);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        document.getElementById('clearConsoleBtn').addEventListener('click', () => {
+            consoleEl.innerHTML = '';
+        });
+
+        // --- HELPERY PRO UI ---
+        function setBtnLoading(btnId, isLoading) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            if (isLoading) {
+                btn.classList.add('loading');
+                btn.disabled = true;
+            } else {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        function disableAllButtons(disable) {
+            ['cleanBtn', 'deleteEmptyBtn', 'analyzeBtn', 'findDupesBtn', 'archiveBtn'].forEach(id => {
+                document.getElementById(id).disabled = disable;
+            });
+        }
+
+        function showSection(name) {
+            Object.values(sections).forEach(el => el.classList.add('hidden'));
+            if (name && sections[name]) sections[name].classList.remove('hidden');
+        }
+
+        // --- NAČTENÍ STATISTIK (DASHBOARD) ---
+        async function fetchDashboardStats() {
+            const path = targetPathInput.value.trim();
+            if (!path) return;
+            try {
+                const res = await fetch(`/api/dashboard-stats?path=${encodeURIComponent(path)}`);
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('stat-size').textContent = data.totalSizeFormatted;
+                    document.getElementById('stat-files').textContent = `${data.totalFiles} souborů`;
+                    document.getElementById('stat-deleted').textContent = data.deletedCount;
+                }
+            } catch (e) { }
+        }
+
+        // Zavolat při načtení a po změně inputu (po timeoutu)
+        let debounceTimer;
+        targetPathInput.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(fetchDashboardStats, 1000);
+        });
+
+        // --- AKCE TLAČÍTEK ---
+
+        // 1. ÚKLID
+        document.getElementById('cleanBtn').addEventListener('click', async () => {
+            const path = targetPathInput.value.trim();
+            if (!path) return appendLog('Zadejte cestu!', 'warning');
+
+            setBtnLoading('cleanBtn', true);
+            disableAllButtons(true);
+
+            try {
+                await fetch('/api/clean', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                await fetchDashboardStats();
+            } catch (e) {
+                appendLog(`Chyba spojení: ${e.message}`, 'error');
+            } finally {
+                setBtnLoading('cleanBtn', false);
+                disableAllButtons(false);
+            }
+        });
+
+        // 2. SMAZAT PRÁZDNÉ
+        document.getElementById('deleteEmptyBtn').addEventListener('click', async () => {
+            const path = targetPathInput.value.trim();
+            if (!path) return appendLog('Zadejte cestu!', 'warning');
+
+            setBtnLoading('deleteEmptyBtn', true);
+            disableAllButtons(true);
+
+            try {
+                await fetch('/api/delete-empty-folders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                await fetchDashboardStats();
+            } catch (e) {
+                appendLog(`Chyba spojení: ${e.message}`, 'error');
+            } finally {
+                setBtnLoading('deleteEmptyBtn', false);
+                disableAllButtons(false);
+            }
+        });
+
+        // 3. ARCHIVACE
+        // Zkratky pro input
+        document.querySelectorAll('.quick-day-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.getElementById('archiveDays').value = btn.getAttribute('data-days');
+            });
+        });
+
+        document.getElementById('archiveBtn').addEventListener('click', async () => {
+            const path = targetPathInput.value.trim();
+            const days = document.getElementById('archiveDays').value;
+            if (!path) return appendLog('Zadejte cestu!', 'warning');
+
+            setBtnLoading('archiveBtn', true);
+            disableAllButtons(true);
+
+            try {
+                await fetch('/api/archive', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path, days })
+                });
+                await fetchDashboardStats();
+            } catch (e) {
+                appendLog(`Chyba spojení: ${e.message}`, 'error');
+            } finally {
+                setBtnLoading('archiveBtn', false);
+                disableAllButtons(false);
+            }
+        });
+
+        // 4. ANALÝZA + CHART.JS
+        document.getElementById('analyzeBtn').addEventListener('click', async () => {
+            const path = targetPathInput.value.trim();
+            if (!path) return appendLog('Zadejte cestu!', 'warning');
+
+            setBtnLoading('analyzeBtn', true);
+            disableAllButtons(true);
+            showSection('placeholder'); // Skryje předchozí data
+            sections.placeholder.textContent = 'Analýza úložiště probíhá...';
+
+            try {
+                const res = await fetch('/api/analyze-storage', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showSection('topFiles');
+
+                    // Render Tabulky
+                    const list = document.getElementById('topFilesList');
+                    list.innerHTML = '';
+                    data.topFiles.forEach(f => {
+                        list.innerHTML += `
+                            <tr class="hover:bg-slate-800/50 transition truncate">
+                                <td class="py-3 px-2 text-slate-300 truncate max-w-xs" title="${f.path}">${f.name}</td>
+                                <td class="py-3 px-2 text-right text-cyber-neon">${f.sizeFormatted}</td>
+                            </tr>
+                        `;
+                    });
+
+                    // Render Chart.js
+                    if (data.categoryStats) {
+                        document.getElementById('chart-placeholder').style.display = 'none';
+
+                        const ctx = document.getElementById('storageChart').getContext('2d');
+
+                        // Barvy pro kategorie
+                        const colorMap = {
+                            'Obrazky': '#f59e0b', 'Videa': '#e11d48', 'Hudba': '#8b5cf6',
+                            'Dokumenty': '#3b82f6', 'Programovani': '#10b981', 'Archivy': '#f97316',
+                            'Aplikace': '#ef4444', 'Ostatni': '#64748b'
+                        };
+
+                        const labels = Object.keys(data.categoryStats).filter(k => data.categoryStats[k] > 0);
+                        const dataValues = labels.map(k => data.categoryStats[k]);
+                        const backgroundColors = labels.map(k => colorMap[k] || '#64748b');
+
+                        if (storageChartInstance) storageChartInstance.destroy();
+
+                        Chart.defaults.color = '#94a3b8';
+                        Chart.defaults.font.family = '"JetBrains Mono", monospace';
+
+                        storageChartInstance = new Chart(ctx, {
+                            type: 'doughnut',
+                            data: {
+                                labels: labels,
+                                datasets: [{
+                                    data: dataValues,
+                                    backgroundColor: backgroundColors,
+                                    borderColor: '#11111a',
+                                    borderWidth: 2,
+                                    hoverOffset: 4
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                cutout: '70%',
+                                plugins: {
+                                    legend: { position: 'right', labels: { boxWidth: 12 } }
+                                }
+                            }
+                        });
+                    }
+
+                    await fetchDashboardStats();
+                }
+            } catch (e) {
+                appendLog(`Chyba spojení: ${e.message}`, 'error');
+            } finally {
+                setBtnLoading('analyzeBtn', false);
+                disableAllButtons(false);
+            }
+        });
+
+        // 5. DUPLICITY
+        let currentDupeFiles = []; // Seznam cest připravených ke smazání
+
+        document.getElementById('findDupesBtn').addEventListener('click', async () => {
+            const path = targetPathInput.value.trim();
+            if (!path) return appendLog('Zadejte cestu!', 'warning');
+
+            setBtnLoading('findDupesBtn', true);
+            disableAllButtons(true);
+            showSection('placeholder');
+            sections.placeholder.textContent = 'Počítám MD5 hashe. To může chvíli trvat...';
+            document.getElementById('deleteSelectedDupesBtn').classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/duplicates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showSection('dupes');
+                    renderDuplicates(data.duplicates);
+                } else {
+                    sections.placeholder.textContent = `Chyba: ${data.error}`;
+                    showSection('placeholder');
+                }
+            } catch (e) {
+                appendLog(`Chyba spojení: ${e.message}`, 'error');
+            } finally {
+                setBtnLoading('findDupesBtn', false);
+                disableAllButtons(false);
+            }
+        });
+
+        function renderDuplicates(duplicates) {
+            const list = document.getElementById('dupesList');
+            const delBtn = document.getElementById('deleteSelectedDupesBtn');
+            list.innerHTML = '';
+            currentDupeFiles = [];
+
+            if (duplicates.length === 0) {
+                list.innerHTML = '<div class="text-center text-slate-500 py-10">Žádné duplicity nebyly nalezeny.</div>';
+                return;
+            }
+
+            delBtn.classList.remove('hidden');
+
+            duplicates.forEach((group, groupIndex) => {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'bg-[#151520] border border-cyber-border rounded p-3';
+
+                let html = `
+                    <div class="flex justify-between items-center mb-2 pb-2 border-b border-cyber-border/50">
+                        <span class="text-xs text-cyber-purple font-bold">Záznam #${groupIndex + 1} (MD5: ${group.hash.substring(0, 8)}...)</span>
+                        <span class="text-xs text-slate-400">Velikost: <span class="text-white">${group.sizeFormatted}</span></span>
+                    </div>
+                    <div class="space-y-1">
+                `;
+
+                // Všechny soubory ve skupině, první je brán jako ORIGINÁL (nezaškrtnutý), ostatní jsou zaškrtlé
+                group.files.forEach((filePath, fileIdx) => {
+                    const isOriginal = fileIdx === 0;
+                    const checkboxId = `dupe-${groupIndex}-${fileIdx}`;
+
+                    html += `
+                        <div class="flex items-start gap-3 p-1 hover:bg-black/30 rounded">
+                            <input type="checkbox" id="${checkboxId}" class="dupe-checkbox mt-1 accent-cyber-rose cursor-pointer" 
+                                value="${filePath}" ${!isOriginal ? 'checked' : ''}>
+                            <label for="${checkboxId}" class="text-xs break-all cursor-pointer ${isOriginal ? 'text-cyber-neon font-bold' : 'text-slate-400'}">
+                                ${isOriginal ? '[ORIGINÁL] ' : ''}${filePath}
+                            </label>
+                        </div>
+                    `;
+                });
+
+                html += `</div>`;
+                groupDiv.innerHTML = html;
+                list.appendChild(groupDiv);
+            });
+        }
+
+        // Hromadné smazání zaškrtlých duplicit
+        document.getElementById('deleteSelectedDupesBtn').addEventListener('click', async () => {
+            const checkboxes = document.querySelectorAll('.dupe-checkbox:checked');
+            const filesToDelete = Array.from(checkboxes).map(cb => cb.value);
+
+            if (filesToDelete.length === 0) {
+                return appendLog('Nebyly vybrány žádné soubory ke smazání.', 'warning');
+            }
+
+            if (!confirm(`Opravdu chcete NENÁVRATNĚ smazat ${filesToDelete.length} souborů?`)) return;
+
+            const btn = document.getElementById('deleteSelectedDupesBtn');
+            btn.textContent = 'Mažu...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/delete-files', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ files: filesToDelete })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    // Refresh duplicit
+                    document.getElementById('findDupesBtn').click();
+                }
+            } catch (e) {
+                appendLog(`Chyba při mazání: ${e.message}`, 'error');
+            } finally {
+                btn.textContent = 'Smazat vybrané';
+                btn.disabled = false;
+            }
+        });
+
+        // --- AUTOPILOT ---
+        const startCronBtn = document.getElementById('startCronBtn');
+        const stopCronBtn = document.getElementById('stopCronBtn');
+        const autopilotStatus = document.getElementById('stat-autopilot');
+
+        startCronBtn.addEventListener('click', async () => {
+            const path = targetPathInput.value.trim();
+            const schedule = document.getElementById('cronSchedule').value;
+            if (!path) return appendLog('Zadejte cestu!', 'warning');
+
+            try {
+                const res = await fetch('/api/cron/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path, schedule })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    autopilotStatus.textContent = `ZAPNUTO (${schedule})`;
+                    autopilotStatus.className = 'text-lg font-mono text-cyber-green mt-1';
+                    startCronBtn.disabled = true;
+                    stopCronBtn.disabled = false;
+                }
+            } catch (e) {
+                appendLog(`Chyba spojení: ${e.message}`, 'error');
+            }
+        });
+
+        stopCronBtn.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/cron/stop', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    autopilotStatus.textContent = 'VYPNUTO';
+                    autopilotStatus.className = 'text-lg font-mono text-slate-500 mt-1';
+                    startCronBtn.disabled = false;
+                    stopCronBtn.disabled = true;
+                }
+            } catch (e) {
+                appendLog(`Chyba spojení: ${e.message}`, 'error');
+            }
+        });
+
+        // Úvodní natáhnutí statů
+        setTimeout(fetchDashboardStats, 500);
+
+    </script>
+</body>
+
+</html>
