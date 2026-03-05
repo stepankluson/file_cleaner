@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -644,7 +645,7 @@ app.post('/api/virus-check', async (req, res) => {
         const fileHash = await generateSHA256Checksum(filePath);
 
         // Zde vložte svůj VirusTotal API klíč
-        const vtApiKey = process.env.VT_API_KEY || 'REDACTED_VT_KEY';
+        const vtApiKey = process.env.VT_API_KEY;
 
         addLog(`Dotazuji se VirusTotal API pro hash: ${fileHash.substring(0, 8)}...`, 'info');
 
@@ -742,7 +743,7 @@ app.post('/api/dead-links', async (req, res) => {
 const RISKY_EXTENSIONS = ['.exe', '.dll', '.bat', '.js', '.vbs', '.msi', '.ps1'];
 const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-const VT_API_KEY = process.env.VT_API_KEY || 'REDACTED_VT_KEY';
+const VT_API_KEY = process.env.VT_API_KEY;
 
 app.post('/api/smart-scan', async (req, res) => {
     try {
