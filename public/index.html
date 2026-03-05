@@ -243,12 +243,6 @@
                         <div class="spinner"></div>
                         <span class="btn-text">🔗 Najít mrtvé zástupce</span>
                     </button>
-
-                    <button id="smartScanBtn" class="w-full neon-button py-3 rounded"
-                        style="border-color: #f43f5e; color: #f43f5e;">
-                        <div class="spinner"></div>
-                        <span class="btn-text">🛡️ Smart Security Scan</span>
-                    </button>
                 </div>
 
                 <!-- Flexible Archive -->
@@ -404,31 +398,6 @@
                         </div>
                     </div>
 
-                    <!-- Smart Security Scan Section -->
-                    <div id="smartScanSection" class="flex-1 flex flex-col hidden">
-                        <div
-                            class="p-4 bg-black/40 border-b border-cyber-border flex justify-between items-center flex-wrap gap-2">
-                            <h3 class="text-sm font-bold text-rose-400 uppercase tracking-wide">🛡️ Potenciálně rizikové
-                                soubory</h3>
-                            <button id="bulkVtBtn"
-                                class="text-xs bg-rose-900/30 text-rose-400 border border-rose-500/50 px-3 py-1 rounded hover:bg-rose-500 hover:text-white transition hidden">
-                                ⏳ Prověřit vše podezřelé
-                            </button>
-                        </div>
-                        <div class="flex-1 overflow-y-auto p-4 relative">
-                            <table class="w-full text-left text-xs font-mono">
-                                <thead>
-                                    <tr class="text-slate-500 border-b border-cyber-border/50">
-                                        <th class="pb-2 font-normal">SOUBOR</th>
-                                        <th class="pb-2 font-normal">VELIKOST</th>
-                                        <th class="pb-2 font-normal">PRIORITA</th>
-                                        <th class="pb-2 font-normal text-right">AKCE</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="smartScanList" class="divide-y divide-cyber-border/30"></tbody>
-                            </table>
-                        </div>
-                    </div>
 
                     <!-- Placeholder -->
                     <div id="dataPlaceholder"
@@ -474,7 +443,6 @@
             topFiles: document.getElementById('topFilesSection'),
             dupes: document.getElementById('dupesSection'),
             deadLinks: document.getElementById('deadLinksSection'),
-            smartScan: document.getElementById('smartScanSection'),
             placeholder: document.getElementById('dataPlaceholder')
         };
 
@@ -519,7 +487,7 @@
         }
 
         function disableAllButtons(disable) {
-            ['cleanBtn', 'deleteEmptyBtn', 'analyzeBtn', 'findDupesBtn', 'archiveBtn', 'cacheStrikerBtn', 'findDeadLinksBtn', 'smartScanBtn'].forEach(id => {
+            ['cleanBtn', 'deleteEmptyBtn', 'analyzeBtn', 'findDupesBtn', 'archiveBtn', 'cacheStrikerBtn', 'findDeadLinksBtn'].forEach(id => {
                 document.getElementById(id).disabled = disable;
             });
         }
@@ -815,168 +783,7 @@
         // 5. DUPLICITY
         let currentDupeFiles = []; // Seznam cest připravených ke smazání
         let currentDeadLinks = []; // Seznam mrtvých zástupců
-        let currentRiskyFiles = []; // Smart Scan rizikové soubory
-
-        // SMART SECURITY SCAN
-        document.getElementById('smartScanBtn').addEventListener('click', async () => {
-            const p = targetPathInput.value.trim();
-            if (!p) return appendLog('Zadejte cestu!', 'warning');
-
-            setBtnLoading('smartScanBtn', true);
-            disableAllButtons(true);
-            showSection('placeholder');
-            sections.placeholder.textContent = 'Smart Scan: hledám rizikové soubory (.exe, .dll, .bat, .js, .vbs, .msi, .ps1) pod 50 MB...';
-
-            try {
-                const res = await fetch('/api/smart-scan', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: p })
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    showSection('smartScan');
-                    currentRiskyFiles = data.riskyFiles;
-                    const list = document.getElementById('smartScanList');
-                    list.innerHTML = '';
-
-                    if (currentRiskyFiles.length === 0) {
-                        list.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-slate-500">Žádné rizikové soubory nebyly nalezeny. ✅</td></tr>';
-                        document.getElementById('bulkVtBtn').classList.add('hidden');
-                    } else {
-                        document.getElementById('bulkVtBtn').classList.remove('hidden');
-                        currentRiskyFiles.forEach((f, idx) => {
-                            const priorityLabel = f.priority === 0
-                                ? '<span class="text-rose-400 font-bold">⚠️ VYSOKÁ (nové stahování)</span>'
-                                : f.priority === 1
-                                    ? '<span class="text-amber-400">Stžené z Downloads</span>'
-                                    : '<span class="text-slate-500">Nízká</span>';
-
-                            list.innerHTML += `
-                                <tr class="hover:bg-slate-800/40 transition">
-                                    <td class="py-2 px-1 text-slate-300 truncate max-w-[160px]" title="${f.path}">${f.name}</td>
-                                    <td class="py-2 px-1 text-slate-400">${f.sizeFormatted}</td>
-                                    <td class="py-2 px-1">${priorityLabel}</td>
-                                    <td class="py-2 px-1 text-right whitespace-nowrap">
-                                        <button class="smart-vt-btn text-[10px] bg-slate-700 hover:bg-rose-900/40 text-slate-300 hover:text-rose-400 border border-slate-600 hover:border-rose-500 px-2 py-1 rounded transition"
-                                            data-path="${f.path.replace(/"/g, '&quot;')}" data-idx="${idx}">
-                                            🛡️ Prověřit digitální otisk
-                                        </button>
-                                        <span class="smart-vt-result-${idx} text-[10px] ml-1 font-bold"></span>
-                                    </td>
-                                </tr>
-                            `;
-                        });
-
-                        // Listener na jednotlivé VT scan tlačítka
-                        document.querySelectorAll('.smart-vt-btn').forEach(btn => {
-                            btn.addEventListener('click', async (e) => {
-                                const fp = e.target.getAttribute('data-path');
-                                const idx = e.target.getAttribute('data-idx');
-                                const resultSpan = document.querySelector(`.smart-vt-result-${idx}`);
-
-                                e.target.disabled = true;
-                                e.target.textContent = '⏳';
-                                resultSpan.textContent = 'Kontroluji...';
-                                resultSpan.className = `smart-vt-result-${idx} text-[10px] ml-1 font-bold text-slate-400`;
-
-                                try {
-                                    const vtRes = await fetch('/api/virus-check', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ path: fp })
-                                    });
-                                    const vtData = await vtRes.json();
-
-                                    if (vtData.success) {
-                                        if (vtData.score === 'Neznámý') {
-                                            const size = currentRiskyFiles[idx].size;
-                                            const riskText = size < 1024 * 1024
-                                                ? 'Neznámý (VYSOKÉ riziko - malý .exe!)'
-                                                : 'Neznámý soubor (nízké riziko u velkých dat)';
-                                            resultSpan.textContent = riskText;
-                                            resultSpan.className = `smart-vt-result-${idx} text-[10px] ml-1 font-bold ${size < 1024 * 1024 ? 'text-rose-400 animate-pulse' : 'text-slate-400'}`;
-                                        } else if (vtData.score.startsWith('0/')) {
-                                            resultSpan.textContent = `✅ ${vtData.score} – čistý`;
-                                            resultSpan.className = `smart-vt-result-${idx} text-[10px] ml-1 font-bold text-emerald-400`;
-                                        } else {
-                                            resultSpan.textContent = `⚠️ ${vtData.score} DETEKCÍ!`;
-                                            resultSpan.className = `smart-vt-result-${idx} text-[10px] ml-1 font-bold text-rose-400 animate-pulse`;
-                                        }
-                                    }
-                                } catch (err) {
-                                    resultSpan.textContent = 'Chyba';
-                                    resultSpan.className = `smart-vt-result-${idx} text-[10px] ml-1 text-rose-400`;
-                                } finally {
-                                    e.target.innerHTML = '🛡️';
-                                    e.target.disabled = false;
-                                }
-                            });
-                        });
-                    }
-                } else {
-                    sections.placeholder.textContent = `Chyba: ${data.error}`;
-                    showSection('placeholder');
-                }
-            } catch (e) {
-                appendLog(`Chyba spojení: ${e.message}`, 'error');
-            } finally {
-                setBtnLoading('smartScanBtn', false);
-                disableAllButtons(false);
-            }
-        });
-
-        // HROMADNÁ VT KONTROLA
-        document.getElementById('bulkVtBtn').addEventListener('click', async () => {
-            if (currentRiskyFiles.length === 0) return;
-
-            const btn = document.getElementById('bulkVtBtn');
-            const totalFiles = currentRiskyFiles.length;
-
-            if (!confirm(`Hromadná kontrola ${totalFiles} souborů. Vážně upozornění: Free tier VirusTotal API dovoluje cca 4 dotazy/minutu, takže mezi každým dotazem čekáme 15 sekund. Chceš pokračovat?`)) return;
-
-            btn.disabled = true;
-            btn.textContent = `⏳ Kontroluji… (0/${totalFiles})`;
-            appendLog(`[BULK VT] Startuje hromadná kontrola ${totalFiles} souborů. Rate limit: 15s/dotaz.`, 'warning');
-
-            try {
-                const filePaths = currentRiskyFiles.map(f => f.path);
-                const res = await fetch('/api/bulk-virus-check', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ files: filePaths })
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    data.results.forEach((r, idx) => {
-                        const resultSpan = document.querySelector(`.smart-vt-result-${idx}`);
-                        if (!resultSpan) return;
-
-                        if (r.score === 'Neznámý') {
-                            resultSpan.textContent = r.risk;
-                            resultSpan.className = `smart-vt-result-${idx} text-[10px] ml-1 font-bold ${r.risk.includes('VYSOKÉ') ? 'text-rose-400' : 'text-slate-400'}`;
-                        } else if (r.error) {
-                            resultSpan.textContent = r.score;
-                            resultSpan.className = `smart-vt-result-${idx} text-[10px] ml-1 text-slate-500`;
-                        } else if (r.malicious > 0) {
-                            resultSpan.textContent = `⚠️ ${r.score} DETEKCÍ!`;
-                            resultSpan.className = `smart-vt-result-${idx} text-[10px] ml-1 font-bold text-rose-400 animate-pulse`;
-                        } else {
-                            resultSpan.textContent = `✅ ${r.score} – čistý`;
-                            resultSpan.className = `smart-vt-result-${idx} text-[10px] ml-1 font-bold text-emerald-400`;
-                        }
-                    });
-                    appendLog(`[BULK VT] Hromadná kontrola dokončena!`, 'success');
-                }
-            } catch (err) {
-                appendLog(`Chyba hromadné kontroly: ${err.message}`, 'error');
-            } finally {
-                btn.textContent = '⏳ Prověřit vše podezřelé';
-                btn.disabled = false;
-            }
-        });
+        let currentRiskyFiles = [];
 
         // 6. DEAD LINKS
         document.getElementById('findDeadLinksBtn').addEventListener('click', async () => {
