@@ -179,7 +179,8 @@
                 </path>
             </svg>
             <h1 class="text-lg font-bold tracking-wider text-slate-200">FILE<span class="text-cyber-neon">CLEANER</span>
-                <span class="text-xs text-slate-500 font-mono">v3.0</span></h1>
+                <span class="text-xs text-slate-500 font-mono">v3.0</span>
+            </h1>
         </div>
         <div class="flex items-center gap-4 text-xs font-mono">
             <div class="px-3 py-1 rounded bg-black/40 border border-cyber-border text-slate-400">
@@ -229,6 +230,18 @@
                         style="border-color: var(--color-cyber-purple); color: var(--color-cyber-purple);">
                         <div class="spinner"></div>
                         <span class="btn-text">👯 Najít Duplicity (MD5)</span>
+                    </button>
+
+                    <button id="cacheStrikerBtn" class="w-full neon-button py-3 rounded"
+                        style="border-color: #10b981; color: #10b981;">
+                        <div class="spinner"></div>
+                        <span class="btn-text">⚡ Cache Striker</span>
+                    </button>
+
+                    <button id="findDeadLinksBtn" class="w-full neon-button py-3 rounded"
+                        style="border-color: #0ea5e9; color: #0ea5e9;">
+                        <div class="spinner"></div>
+                        <span class="btn-text">🔗 Najít mrtvé zástupce</span>
                     </button>
                 </div>
 
@@ -370,6 +383,21 @@
                         </div>
                     </div>
 
+                    <!-- Dead Links Section -->
+                    <div id="deadLinksSection" class="flex-1 flex flex-col hidden">
+                        <div class="p-4 bg-black/40 border-b border-cyber-border flex justify-between items-center">
+                            <h3 class="text-sm font-bold text-sky-500 uppercase tracking-wide">Mrtví zástupci (.lnk)
+                            </h3>
+                            <button id="deleteDeadLinksBtn"
+                                class="text-xs bg-cyber-rose/20 text-cyber-rose border border-cyber-rose/50 px-3 py-1 rounded hover:bg-cyber-rose hover:text-white transition hidden">
+                                Smazat všechny do koše
+                            </button>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-4 relative">
+                            <ul id="deadLinksList" class="space-y-2 text-sm text-slate-400 font-mono"></ul>
+                        </div>
+                    </div>
+
                     <!-- Placeholder -->
                     <div id="dataPlaceholder"
                         class="flex-1 flex items-center justify-center text-sm font-mono text-slate-600">
@@ -413,6 +441,7 @@
         const sections = {
             topFiles: document.getElementById('topFilesSection'),
             dupes: document.getElementById('dupesSection'),
+            deadLinks: document.getElementById('deadLinksSection'),
             placeholder: document.getElementById('dataPlaceholder')
         };
 
@@ -457,7 +486,7 @@
         }
 
         function disableAllButtons(disable) {
-            ['cleanBtn', 'deleteEmptyBtn', 'analyzeBtn', 'findDupesBtn', 'archiveBtn'].forEach(id => {
+            ['cleanBtn', 'deleteEmptyBtn', 'analyzeBtn', 'findDupesBtn', 'archiveBtn', 'cacheStrikerBtn', 'findDeadLinksBtn'].forEach(id => {
                 document.getElementById(id).disabled = disable;
             });
         }
@@ -593,12 +622,64 @@
                     const list = document.getElementById('topFilesList');
                     list.innerHTML = '';
                     data.topFiles.forEach(f => {
+                        const installerBadge = f.isInstaller ? `<span class="ml-2 text-[10px] bg-cyber-amber/20 text-cyber-amber px-1.5 py-0.5 rounded border border-cyber-amber/30">INSTALLER</span>` : '';
                         list.innerHTML += `
                             <tr class="hover:bg-slate-800/50 transition truncate">
-                                <td class="py-3 px-2 text-slate-300 truncate max-w-xs" title="${f.path}">${f.name}</td>
-                                <td class="py-3 px-2 text-right text-cyber-neon">${f.sizeFormatted}</td>
+                                <td class="py-3 px-2 text-slate-300 truncate max-w-xs" title="${f.path}">
+                                    ${f.name}
+                                    ${installerBadge}
+                                </td>
+                                <td class="py-3 px-2 text-right whitespace-nowrap">
+                                    <span class="text-cyber-neon mr-2">${f.sizeFormatted}</span>
+                                    <button class="vt-scan-btn text-[10px] bg-slate-700/50 hover:bg-cyber-purple/30 text-slate-300 hover:text-cyber-purple border border-slate-600 hover:border-cyber-purple px-1.5 py-1 rounded transition" data-path="${f.path.replace(/"/g, '&quot;')}">
+                                        🛡️ VT Scan
+                                    </button>
+                                    <span class="vt-result text-[10px] ml-1 font-bold"></span>
+                                </td>
                             </tr>
                         `;
+                    });
+
+                    // Add event listeners for VT buttons
+                    document.querySelectorAll('.vt-scan-btn').forEach(btn => {
+                        btn.addEventListener('click', async (e) => {
+                            const path = e.target.getAttribute('data-path');
+                            const resultSpan = e.target.nextElementSibling;
+
+                            e.target.disabled = true;
+                            e.target.textContent = '⏳';
+                            resultSpan.textContent = '...';
+
+                            try {
+                                const vtRes = await fetch('/api/virus-check', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ path })
+                                });
+                                const vtData = await vtRes.json();
+
+                                if (vtData.success) {
+                                    resultSpan.textContent = vtData.score;
+                                    resultSpan.className = 'vt-result text-[10px] ml-1 font-bold';
+                                    if (vtData.score.startsWith('0/')) {
+                                        resultSpan.classList.add('text-cyber-green');
+                                    } else if (vtData.score === 'Neznámý') {
+                                        resultSpan.classList.add('text-slate-400');
+                                    } else {
+                                        resultSpan.classList.add('text-cyber-rose', 'animate-pulse');
+                                    }
+                                } else {
+                                    resultSpan.textContent = 'Chyba';
+                                    resultSpan.className = 'vt-result text-[10px] ml-1 font-bold text-cyber-rose';
+                                }
+                            } catch (err) {
+                                resultSpan.textContent = 'Err';
+                                resultSpan.className = 'vt-result text-[10px] ml-1 font-bold text-cyber-rose';
+                            } finally {
+                                e.target.innerHTML = '🛡️';
+                                e.target.disabled = false;
+                            }
+                        });
                     });
 
                     // Render Chart.js
@@ -656,8 +737,123 @@
             }
         });
 
+        // CACHE STRIKER
+        document.getElementById('cacheStrikerBtn').addEventListener('click', async () => {
+            setBtnLoading('cacheStrikerBtn', true);
+            disableAllButtons(true);
+
+            try {
+                appendLog('Skenuji velikost dočasných souborů a cache...', 'info');
+                const scanRes = await fetch('/api/scan-cache');
+                const scanData = await scanRes.json();
+
+                if (scanData.success) {
+                    if (scanData.totalSize === 0) {
+                        appendLog('Cache je prázdná. Není co čistit.', 'success');
+                        return;
+                    }
+
+                    const confirmMsg = `Cache Striker našel ${scanData.fileCount} souborů o celkové velikosti ${scanData.totalSizeFormatted}. Přejete si je smazat (přesunout do Koše)?`;
+                    if (confirm(confirmMsg)) {
+                        appendLog('Mažu dočasné soubory...', 'warning');
+                        const cleanRes = await fetch('/api/clean-cache', { method: 'POST' });
+                        const cleanData = await cleanRes.json();
+
+                        if (cleanData.success) {
+                            appendLog(`Úspěšně smazáno ${cleanData.deletedCount} souborů (${cleanData.freedSpaceFormatted}).`, 'success');
+                            await fetchDashboardStats();
+                        } else {
+                            appendLog(`Chyba Cache Strikeru: ${cleanData.error}`, 'error');
+                        }
+                    } else {
+                        appendLog('Smazání cache bylo zrušeno uživatelem.', 'info');
+                    }
+                } else {
+                    appendLog(`Chyba při skenování cache: ${scanData.error}`, 'error');
+                }
+            } catch (e) {
+                appendLog(`Chyba spojení u Cache Strikeru: ${e.message}`, 'error');
+            } finally {
+                setBtnLoading('cacheStrikerBtn', false);
+                disableAllButtons(false);
+            }
+        });
+
         // 5. DUPLICITY
         let currentDupeFiles = []; // Seznam cest připravených ke smazání
+        let currentDeadLinks = []; // Seznam mrtvých zástupců
+
+        // 6. DEAD LINKS
+        document.getElementById('findDeadLinksBtn').addEventListener('click', async () => {
+            const path = targetPathInput.value.trim();
+            if (!path) return appendLog('Zadejte cestu!', 'warning');
+
+            setBtnLoading('findDeadLinksBtn', true);
+            disableAllButtons(true);
+            showSection('placeholder');
+            sections.placeholder.textContent = 'Prověřuji zástupce přes PowerShell. To může chvíli trvat...';
+            document.getElementById('deleteDeadLinksBtn').classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/dead-links', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showSection('deadLinks');
+                    currentDeadLinks = data.deadLinks;
+                    const list = document.getElementById('deadLinksList');
+                    list.innerHTML = '';
+
+                    if (currentDeadLinks.length === 0) {
+                        list.innerHTML = '<li class="text-center py-6 text-slate-500">Žádní mrtví zástupci nebyli nalezeni.</li>';
+                    } else {
+                        currentDeadLinks.forEach(lnk => {
+                            list.innerHTML += `<li class="truncate py-1 border-b border-cyber-border/30 hover:text-slate-200 hover:bg-black/30 px-2 rounded" title="${lnk}">🔗 ${lnk}</li>`;
+                        });
+                        document.getElementById('deleteDeadLinksBtn').classList.remove('hidden');
+                    }
+                } else {
+                    sections.placeholder.textContent = `Chyba: ${data.error}`;
+                    showSection('placeholder');
+                }
+            } catch (e) {
+                appendLog(`Chyba spojení: ${e.message}`, 'error');
+            } finally {
+                setBtnLoading('findDeadLinksBtn', false);
+                disableAllButtons(false);
+            }
+        });
+
+        document.getElementById('deleteDeadLinksBtn').addEventListener('click', async () => {
+            if (currentDeadLinks.length === 0) return;
+            if (!confirm(`Opravdu přesunout do Koše ${currentDeadLinks.length} nefunkčních zástupců?`)) return;
+
+            const btn = document.getElementById('deleteDeadLinksBtn');
+            btn.textContent = 'Mažu...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/delete-files', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ files: currentDeadLinks })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    document.getElementById('findDeadLinksBtn').click();
+                }
+            } catch (e) {
+                appendLog(`Chyba při mazání: ${e.message}`, 'error');
+            } finally {
+                btn.textContent = 'Smazat všechny do koše';
+                btn.disabled = false;
+            }
+        });
 
         document.getElementById('findDupesBtn').addEventListener('click', async () => {
             const path = targetPathInput.value.trim();

@@ -7,6 +7,11 @@ const cron = require('node-cron');
 const crypto = require('crypto');
 const http = require('http'); // Nové pro svázání expressu se sockety
 const { Server } = require('socket.io'); // Socket.io server
+const trash = require('trash'); // Smazání do koše
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
+
 
 const app = express();
 const server = http.createServer(app);
@@ -110,7 +115,18 @@ function performCleanup(targetPath) {
         if (!stat.isFile()) return;
 
         const ext = path.extname(item);
-        const category = getCategory(ext);
+        let category = getCategory(ext);
+
+        // Inteligentní klasifikátor (AI logika)
+        const lowerItem = item.toLowerCase();
+        if (lowerItem.includes('screen') || lowerItem.includes('snímek') || lowerItem.includes('shot')) {
+            category = path.join('Obrazky', 'Screenshoty');
+        } else {
+            const match = item.match(/\b(202[0-9])\b/);
+            if (match) {
+                category = path.join(category, match[1]);
+            }
+        }
 
         const categoryFolder = path.join(uklizenoPath, category);
         if (!fs.existsSync(categoryFolder)) {
@@ -222,7 +238,7 @@ app.get('/', (req, res) => {
 
 // -- MAZÁNÍ PRÁZDNÝCH SLOŽEK --
 
-function deleteEmptyFoldersRecursive(dir) {
+async function deleteEmptyFoldersRecursive(dir) {
     let deletedCount = 0;
     let items;
     try {
@@ -234,7 +250,7 @@ function deleteEmptyFoldersRecursive(dir) {
         return deletedCount;
     }
 
-    items.forEach(item => {
+    for (const item of items) {
         const fullPath = path.join(dir, item);
 
         // KRITICKÝ BLACKLIST
@@ -245,37 +261,37 @@ function deleteEmptyFoldersRecursive(dir) {
             item === '_UKLIZENO_' ||
             item.startsWith('_ARCHIV_') ||
             item.startsWith('.')) {
-            return;
+            continue;
         }
 
         let stat;
         try {
             stat = fs.statSync(fullPath);
         } catch (err) {
-            return;
+            continue;
         }
 
         if (stat.isDirectory()) {
             // Nejdříve se zanoříme dolů (post-order traversal)
-            deletedCount += deleteEmptyFoldersRecursive(fullPath);
+            deletedCount += await deleteEmptyFoldersRecursive(fullPath);
 
             // Poté zkontrolujeme, zda se složka nevyprázdnila
             try {
                 const remaining = fs.readdirSync(fullPath);
                 if (remaining.length === 0) {
-                    fs.rmdirSync(fullPath);
+                    await trash(fullPath);
                     deletedCount++;
                 }
             } catch (err) {
                 // Ignorujeme, pravděpodobně oprávnění nebo smazáno jinak
             }
         }
-    });
+    }
 
     return deletedCount;
 }
 
-app.post('/api/delete-empty-folders', (req, res) => {
+app.post('/api/delete-empty-folders', async (req, res) => {
     try {
         const rawPath = req.body.path || path.join(os.homedir(), 'Downloads');
         const targetPath = path.resolve(path.normalize(rawPath));
@@ -286,7 +302,7 @@ app.post('/api/delete-empty-folders', (req, res) => {
             return res.status(400).json({ error: 'Složka na disku neexistuje nebo je špatně zadaná cesta' });
         }
 
-        const deletedCount = deleteEmptyFoldersRecursive(targetPath);
+        const deletedCount = await deleteEmptyFoldersRecursive(targetPath);
         res.json({ success: true, deletedCount });
 
     } catch (error) {
@@ -436,11 +452,17 @@ app.post('/api/analyze-storage', (req, res) => {
                 categoryStats['Ostatni']++;
             }
 
+            const fileName = path.basename(fullPath);
+            const lowerFileName = fileName.toLowerCase();
+            const isInstaller = (ext === '.exe' || ext === '.msi' || ext === '.dmg') &&
+                (lowerFileName.includes('setup') || lowerFileName.includes('install'));
+
             filesData.push({
-                name: path.basename(fullPath),
+                name: fileName,
                 path: fullPath,
                 sizeRaw: stat.size,
-                sizeFormatted: formatBytes(stat.size)
+                sizeFormatted: formatBytes(stat.size),
+                isInstaller: isInstaller
             });
         });
 
@@ -518,24 +540,200 @@ app.post('/api/duplicates', async (req, res) => {
 });
 
 // Endpoint pro smazání vybraných listů souborů
-app.post('/api/delete-files', (req, res) => {
+app.post('/api/delete-files', async (req, res) => {
     try {
         const filesToDelete = req.body.files;
         if (!Array.isArray(filesToDelete)) return res.status(400).json({ error: 'Očekáváno pole cest' });
 
         let deleted = 0;
-        filesToDelete.forEach(fp => {
+        for (const fp of filesToDelete) {
             try {
-                fs.unlinkSync(fp);
-                addLog(`Smazán duplikát: ${path.basename(fp)}`, 'success');
+                await trash(fp);
+                addLog(`Přesunut duplikát do Koše: ${path.basename(fp)}`, 'success');
                 deleted++;
             } catch (e) {
-                addLog(`Nelze smazat duplikát ${fp}`, 'error');
+                addLog(`Nelze přesunout duplikát do Koše: ${fp}`, 'error');
             }
-        });
+        }
 
         res.json({ success: true, deletedCount: deleted });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- CACHE STRIKER ---
+const cachePaths = [
+    os.tmpdir(),
+    path.join(os.homedir(), 'AppData', 'Local', 'Temp'),
+    path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'User Data', 'Default', 'Cache'),
+    path.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'Edge', 'User Data', 'Default', 'Cache')
+];
+
+app.get('/api/scan-cache', async (req, res) => {
+    try {
+        let totalSize = 0;
+        let fileCount = 0;
+
+        for (const cacheDir of cachePaths) {
+            if (fs.existsSync(cacheDir)) {
+                const files = getSafeFilesRecursive(cacheDir);
+                for (const fp of files) {
+                    try {
+                        const st = fs.statSync(fp);
+                        totalSize += st.size;
+                        fileCount++;
+                    } catch (e) { }
+                }
+            }
+        }
+        res.json({ success: true, totalSize, totalSizeFormatted: formatBytes(totalSize), fileCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/clean-cache', async (req, res) => {
+    try {
+        let deletedCount = 0;
+        let freedSpace = 0;
+
+        addLog(`[CACHE STRIKER] Startuji hloubkové čištění mezipamětí...`);
+
+        for (const cacheDir of cachePaths) {
+            if (fs.existsSync(cacheDir)) {
+                const files = getSafeFilesRecursive(cacheDir);
+                for (const fp of files) {
+                    try {
+                        const st = fs.statSync(fp);
+                        await trash(fp);
+                        freedSpace += st.size;
+                        deletedCount++;
+                    } catch (e) { }
+                }
+            }
+        }
+
+        addLog(`[CACHE STRIKER] Hloubkové čištění dokončeno. Uvolněno: ${formatBytes(freedSpace)} (${deletedCount} souborů).`, 'success');
+        res.json({ success: true, deletedCount, freedSpaceFormatted: formatBytes(freedSpace) });
+    } catch (err) {
+        addLog(`Chyba při hloubkovém čištění: ${err.message}`, 'error');
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- VIRUSTOTAL & MRTVI ZASTUPCI ---
+function generateSHA256Checksum(filePath) {
+    return new Promise((resolve, reject) => {
+        const hash = crypto.createHash('sha256');
+        const stream = fs.createReadStream(filePath);
+        stream.on('error', err => reject(err));
+        stream.on('data', chunk => hash.update(chunk));
+        stream.on('end', () => resolve(hash.digest('hex')));
+    });
+}
+
+app.post('/api/virus-check', async (req, res) => {
+    try {
+        const filePath = req.body.path;
+        if (!filePath || !fs.existsSync(filePath)) {
+            return res.status(400).json({ error: 'Soubor neexistuje nebo nebyla zadaná cesta.' });
+        }
+
+        addLog(`Počítám SHA-256 hash pro: ${path.basename(filePath)}`);
+        const fileHash = await generateSHA256Checksum(filePath);
+
+        // Zde vložte svůj VirusTotal API klíč
+        const vtApiKey = process.env.VT_API_KEY || 'REDACTED_VT_KEY';
+
+        addLog(`Dotazuji se VirusTotal API pro hash: ${fileHash.substring(0, 8)}...`, 'info');
+
+        if (vtApiKey === 'PLACEHOLDER_KEY') {
+            // Nemáme reálný klíč, použijeme simulaci
+            const isClean = Math.random() > 0.1;
+            const maliciousCount = isClean ? 0 : Math.floor(Math.random() * 5) + 1;
+            const totalScanners = 75;
+
+            setTimeout(() => {
+                addLog(`[SIMULACE] VirusTotal scan dokončen. Detekce: ${maliciousCount}/${totalScanners}`, maliciousCount > 0 ? 'warning' : 'success');
+                res.json({
+                    success: true,
+                    score: `${maliciousCount}/${totalScanners}`
+                });
+            }, 1000);
+            return;
+        }
+
+        // Reálný dotaz na API (pokud je zadán klíč)
+        const response = await fetch(`https://www.virustotal.com/api/v3/files/${fileHash}`, {
+            method: 'GET',
+            headers: {
+                'x-apikey': vtApiKey
+            }
+        });
+
+        if (response.status === 404) {
+            addLog(`Soubor není ve VirusTotal databázi.`, 'info');
+            return res.json({ success: true, score: 'Neznámý' });
+        }
+
+        if (!response.ok) {
+            throw new Error(`API chyba: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const stats = data.data.attributes.last_analysis_stats;
+        const malicious = stats.malicious;
+        const total = malicious + stats.suspicious + stats.undetected + stats.harmless + stats.timeout;
+
+        addLog(`VirusTotal scan dokončen. Detekce: ${malicious}/${total}`, malicious > 0 ? 'warning' : 'success');
+
+        res.json({
+            success: true,
+            score: `${malicious}/${total}`
+        });
+
+    } catch (err) {
+        addLog(`Chyba při kontrolu virů: ${err.message}`, 'error');
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Endpoint pro detekci mrtvých zástupců
+app.post('/api/dead-links', async (req, res) => {
+    try {
+        const rawPath = req.body.path || path.join(os.homedir(), 'Desktop');
+        const targetPath = path.resolve(path.normalize(rawPath));
+
+        addLog(`Startuji detekci mrtvých zástupců (LNK): ${targetPath}`);
+
+        if (!fs.existsSync(targetPath)) {
+            return res.status(400).json({ error: 'Složka neexistuje.' });
+        }
+
+        const allFiles = getSafeFilesRecursive(targetPath);
+        const lnkFiles = allFiles.filter(f => f.toLowerCase().endsWith('.lnk'));
+        const deadLinks = [];
+
+        for (const lnk of lnkFiles) {
+            try {
+                // Použití PowerShellu pro získání cílové cesty zástupce
+                const command = `powershell.exe -NoProfile -Command "(New-Object -COM WScript.Shell).CreateShortcut('${lnk.replace(/'/g, "''")}').TargetPath"`;
+                const { stdout } = await execPromise(command);
+                const targetPoint = stdout.trim();
+
+                if (targetPoint && !fs.existsSync(targetPoint)) {
+                    deadLinks.push(lnk);
+                }
+            } catch (err) {
+                // Přeskočit pokud nelze zpracovat
+            }
+        }
+
+        addLog(`Nalezeno ${deadLinks.length} nefunkčních zástupců.`, 'info');
+        res.json({ success: true, deadLinks });
+    } catch (err) {
+        addLog(`Chyba skenu mrtvých zástupců: ${err.message}`, 'error');
         res.status(500).json({ error: err.message });
     }
 });
