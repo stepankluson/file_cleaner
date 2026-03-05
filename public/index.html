@@ -630,57 +630,9 @@
                                     ${f.name}
                                     ${installerBadge}
                                 </td>
-                                <td class="py-3 px-2 text-right whitespace-nowrap">
-                                    <span class="text-cyber-neon mr-2">${f.sizeFormatted}</span>
-                                    <button class="vt-scan-btn text-[10px] bg-slate-700/50 hover:bg-cyber-purple/30 text-slate-300 hover:text-cyber-purple border border-slate-600 hover:border-cyber-purple px-1.5 py-1 rounded transition" data-path="${f.path.replace(/"/g, '&quot;')}">
-                                        🛡️ VT Scan
-                                    </button>
-                                    <span class="vt-result text-[10px] ml-1 font-bold"></span>
-                                </td>
+                                <td class="py-3 px-2 text-right text-cyber-neon">${f.sizeFormatted}</td>
                             </tr>
                         `;
-                    });
-
-                    // Add event listeners for VT buttons
-                    document.querySelectorAll('.vt-scan-btn').forEach(btn => {
-                        btn.addEventListener('click', async (e) => {
-                            const path = e.target.getAttribute('data-path');
-                            const resultSpan = e.target.nextElementSibling;
-
-                            e.target.disabled = true;
-                            e.target.textContent = '⏳';
-                            resultSpan.textContent = '...';
-
-                            try {
-                                const vtRes = await fetch('/api/virus-check', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ path })
-                                });
-                                const vtData = await vtRes.json();
-
-                                if (vtData.success) {
-                                    resultSpan.textContent = vtData.score;
-                                    resultSpan.className = 'vt-result text-[10px] ml-1 font-bold';
-                                    if (vtData.score.startsWith('0/')) {
-                                        resultSpan.classList.add('text-cyber-green');
-                                    } else if (vtData.score === 'Neznámý') {
-                                        resultSpan.classList.add('text-slate-400');
-                                    } else {
-                                        resultSpan.classList.add('text-cyber-rose', 'animate-pulse');
-                                    }
-                                } else {
-                                    resultSpan.textContent = 'Chyba';
-                                    resultSpan.className = 'vt-result text-[10px] ml-1 font-bold text-cyber-rose';
-                                }
-                            } catch (err) {
-                                resultSpan.textContent = 'Err';
-                                resultSpan.className = 'vt-result text-[10px] ml-1 font-bold text-cyber-rose';
-                            } finally {
-                                e.target.innerHTML = '🛡️';
-                                e.target.disabled = false;
-                            }
-                        });
                     });
 
                     // Render Chart.js
